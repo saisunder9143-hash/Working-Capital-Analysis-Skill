@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Working Capital Analysis Assistant</title>
+<style>
+  :root {
+    --ink: #17202a; --muted: #55636f; --paper: #f2f4f7; --panel: #ffffff; --line: #d3dae1;
+    --accent: #1d3f72; --accent-ink: #ffffff;
+    --good: #1b6b3a; --good-bg: #e4f2e9; --bad: #a4261d; --bad-bg: #fbe6e3;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 1000px; margin: 0 auto; padding: 32px 20px 64px; }
+  h1 { font: 700 30px/1.2 Georgia, "Times New Roman", serif; margin: 0 0 8px; letter-spacing: -0.01em; }
+  h2 { font: 700 20px/1.3 Georgia, "Times New Roman", serif; margin: 0 0 12px; }
+  .lede { color: var(--muted); max-width: 64ch; margin: 0 0 24px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 20px; margin-bottom: 20px; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  th { font-size: 13px; color: var(--muted); font-weight: 600; white-space: nowrap; }
+  td.num, th.num { text-align: right; }
+  tr.group td { background: #eaeff5; font-weight: 700; color: var(--accent); font-size: 14px; }
+  input, select { font: inherit; color: var(--ink); padding: 7px 8px; border: 1px solid #a9b5bf; border-radius: 4px; background: #fff; width: 100%; }
+  input[type=number] { text-align: right; min-width: 120px; }
+  input:focus-visible, select:focus-visible, button:focus-visible { outline: 3px solid #9db8e0; outline-offset: 1px; }
+  .meta { display: grid; grid-template-columns: 2fr 1fr; gap: 12px 16px; margin-bottom: 16px; }
+  .meta label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; margin-top: 16px; }
+  button { font: inherit; font-weight: 600; padding: 9px 16px; border-radius: 4px; cursor: pointer; border: 1px solid var(--accent); background: #fff; color: var(--accent); }
+  button.primary { background: var(--accent); color: var(--accent-ink); }
+  button:disabled { opacity: .6; cursor: progress; }
+  #status { margin: 12px 0 0; min-height: 1.5em; color: var(--muted); }
+  #status.error { color: var(--bad); }
+  .note { color: var(--muted); font-size: 14px; margin: 10px 0 0; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 13px; font-weight: 600; }
+  .tag.ok { background: var(--good-bg); color: var(--good); }
+  .tag.bad { background: var(--bad-bg); color: var(--bad); }
+  .checks { list-style: none; margin: 0; padding: 0; }
+  .checks li { padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .checks .detail { color: var(--muted); font-size: 14px; display: block; margin-top: 2px; }
+  .warn { background: var(--bad-bg); color: var(--bad); border-radius: 4px; padding: 10px 12px; margin-bottom: 12px; font-weight: 600; }
+  .formula { color: var(--muted); font-size: 13px; }
+  .na { color: var(--muted); font-size: 13px; }
+  .commentary { white-space: pre-wrap; max-width: 72ch; }
+  @media (max-width: 640px) { h1 { font-size: 24px; } .meta { grid-template-columns: 1fr; } button.primary { width: 100%; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Working capital analysis assistant</h1>
+  <p class="lede">Enter revenue, cost of goods sold, current assets and current liabilities. The app calculates liquidity ratios, receivable, inventory and payable days, the cash conversion cycle, cash effects and data checks in code, so the numbers are exact. Claude then writes the analysis using the rules in a written Skill (SKILL.md).</p>
+
+  <section class="panel" aria-labelledby="in-h">
+    <h2 id="in-h">Your figures</h2>
+    <div class="meta">
+      <div><label for="company">Company name (optional)</label><input id="company" type="text" maxlength="80"></div>
+      <div><label for="unit">Unit of the figures</label>
+        <select id="unit">
+          <option>Rs</option><option>Rs thousands</option><option>Rs lakhs</option><option>Rs crore</option><option>Rs millions</option>
+        </select></div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Item</th><th class="num">Previous year</th><th class="num">Current year</th></tr></thead>
+        <tbody id="form-rows"></tbody>
+      </table>
+    </div>
+    <div class="controls">
+      <button type="button" id="run" class="primary">Analyse working capital</button>
+      <button type="button" id="clear">Clear all figures</button>
+    </div>
+    <p id="status" role="status"></p>
+    <p class="note">Total current assets and total current liabilities for the current year are required. Everything else is optional: ratios, day counts and checks are only calculated when their figures are entered. Days use closing balances and 365 days. The values shown are sample figures for a fictional company.</p>
+  </section>
+
+  <section id="results" hidden>
+    <div class="panel"><h2>Data checks</h2><div id="checks"></div></div>
+    <div class="panel"><h2>Year-on-year changes</h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Item</th><th class="num">Previous</th><th class="num">Current</th><th class="num">Change</th><th class="num">Change %</th></tr></thead>
+        <tbody id="changes"></tbody></table></div></div>
+    <div class="panel"><h2>Ratios</h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Ratio</th><th class="num">Previous</th><th class="num">Current</th></tr></thead>
+        <tbody id="ratios"></tbody></table></div>
+      <p class="note">A ratio is only shown when every figure it needs was entered. Days use closing balances and 365 days, and payable days use COGS. Whether a ratio is strong or weak depends on the industry, so compare with peers.</p></div>
+    <div class="panel"><h2>Cash effect of working capital movements</h2><div id="cashimpact"></div></div>
+    <div class="panel"><h2>Analysis</h2><div id="commentary" class="commentary"></div></div>
+  </section>
+</main>
+
+<script>
+  const FIELDS = [
+    ["Income statement", [["revenue","Revenue"],["cogs","Cost of goods sold (COGS)"]]],
+    ["Current assets", [["cash","Cash and cash equivalents"],["receivables","Trade receivables"],["inventory","Inventory"],["otherCurrentAssets","Other current assets"],["currentAssets","Total current assets"]]],
+    ["Current liabilities", [["payables","Trade payables"],["shortTermDebt","Short-term debt"],["otherCurrentLiabilities","Other current liabilities"],["currentLiabilities","Total current liabilities"]]],
+    ["Cash flow statement", [["cfo","Operating cash flow"]]]
+  ];
+  // Sample figures for a fictional company (previous, current)
+  const SAMPLE = {
+    revenue:[1000000,1200000], cogs:[650000,800000],
+    cash:[150000,200000], receivables:[160000,240000], inventory:[140000,200000], otherCurrentAssets:[30000,40000], currentAssets:[480000,680000],
+    payables:[100000,120000], shortTermDebt:[100000,110000], otherCurrentLiabilities:[60000,70000], currentLiabilities:[260000,300000],
+    cfo:[210000,260000]
+  };
+  const formRows = document.getElementById("form-rows");
+  const statusEl = document.getElementById("status");
+  const runBtn = document.getElementById("run");
+
+  function buildForm(useSample) {
+    formRows.textContent = "";
+    FIELDS.forEach(([group, items]) => {
+      const g = document.createElement("tr"); g.className = "group";
+      const gt = document.createElement("td"); gt.colSpan = 3; gt.textContent = group; g.appendChild(gt); formRows.appendChild(g);
+      items.forEach(([key, label]) => {
+        const tr = document.createElement("tr");
+        const l = document.createElement("td"); l.textContent = label; tr.appendChild(l);
+        [0, 1].forEach(i => {
+          const td = document.createElement("td");
+          const inp = document.createElement("input");
+          inp.type = "number"; inp.step = "any"; inp.dataset.key = key; inp.dataset.period = i === 0 ? "previous" : "current";
+          inp.setAttribute("aria-label", label + (i === 0 ? " previous year" : " current year"));
+          if (useSample) inp.value = SAMPLE[key][i];
+          td.appendChild(inp); tr.appendChild(td);
+        });
+        formRows.appendChild(tr);
+      });
+    });
+  }
+  buildForm(true);
+  document.getElementById("company").value = "Sample Traders Pvt Ltd (fictional)";
+  document.getElementById("clear").addEventListener("click", () => { buildForm(false); document.getElementById("company").value = ""; });
+
+  const num = n => Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 });
+  const signed = n => (n > 0 ? "+" : n < 0 ? "-" : "") + num(Math.abs(n));
+
+  function collect() {
+    const out = { previous: {}, current: {} };
+    formRows.querySelectorAll("input").forEach(i => { out[i.dataset.period][i.dataset.key] = i.value; });
+    return out;
+  }
+  function cell(tr, text, cls) { const td = document.createElement("td"); if (cls) td.className = cls; td.textContent = text; tr.appendChild(td); return td; }
+  function tag(text, kind) { const s = document.createElement("span"); s.className = "tag " + kind; s.textContent = text; return s; }
+
+  function ratioCell(tr, r, unit) {
+    const td = document.createElement("td"); td.className = "num";
+    if (r.value === null) { const s = document.createElement("span"); s.className = "na"; s.textContent = "Not calculated: " + r.reason; td.appendChild(s); }
+    else td.textContent = num(r.value) + (unit === "%" ? "%" : unit === "days" ? " days" : "");
+    tr.appendChild(td);
+  }
+
+  function render(d) {
+    // checks
+    const checks = document.getElementById("checks"); checks.textContent = "";
+    const bad = d.checks.filter(c => c.status === "mismatch");
+    if (bad.length) { const w = document.createElement("div"); w.className = "warn"; w.textContent = bad.length + " check(s) failed. Verify these figures before relying on the analysis."; checks.appendChild(w); }
+    if (!d.checks.length) { const p = document.createElement("p"); p.className = "note"; p.textContent = "No checks could run because the figures they need were not entered."; checks.appendChild(p); }
+    const ul = document.createElement("ul"); ul.className = "checks";
+    d.checks.forEach(c => {
+      const li = document.createElement("li");
+      li.appendChild(tag(c.status === "ok" ? "Passed" : "Mismatch", c.status === "ok" ? "ok" : "bad"));
+      li.appendChild(document.createTextNode(" " + c.name));
+      const dt = document.createElement("span"); dt.className = "detail"; dt.textContent = c.detail; li.appendChild(dt);
+      ul.appendChild(li);
+    });
+    if (d.checks.length) checks.appendChild(ul);
+
+    // changes
+    const ch = document.getElementById("changes"); ch.textContent = "";
+    let lastGroup = null;
+    d.changes.forEach(r => {
+      if (r.group !== lastGroup) {
+        const g = document.createElement("tr"); g.className = "group";
+        const gt = document.createElement("td"); gt.colSpan = 5; gt.textContent = r.group; g.appendChild(gt); ch.appendChild(g); lastGroup = r.group;
+      }
+      const tr = document.createElement("tr");
+      cell(tr, r.label);
+      cell(tr, r.previous === null ? "-" : num(r.previous), "num");
+      cell(tr, r.current === null ? "-" : num(r.current), "num");
+      cell(tr, r.change === null ? "-" : signed(r.change), "num");
+      const p = cell(tr, r.changePct === null ? "n/a" : signed(r.changePct) + "%", "num");
+      if (r.changePct === null && r.note) p.title = r.note;
+      ch.appendChild(tr);
+    });
+
+    // ratios
+    const rt = document.getElementById("ratios"); rt.textContent = "";
+    d.ratios.forEach(r => {
+      const tr = document.createElement("tr");
+      const first = cell(tr, r.name);
+      const f = document.createElement("div"); f.className = "formula"; f.textContent = r.formula; first.appendChild(f);
+      ratioCell(tr, r.previous, r.unit); ratioCell(tr, r.current, r.unit);
+      rt.appendChild(tr);
+    });
+
+    // cash effect of working capital movements
+    const ci = document.getElementById("cashimpact"); ci.textContent = "";
+    const imp = d.cashImpact;
+    if (!imp.available) { const p = document.createElement("p"); p.className = "note"; p.textContent = imp.reason; ci.appendChild(p); }
+    else {
+      const t = document.createElement("table");
+      const th = document.createElement("thead"); const hr = document.createElement("tr");
+      ["Item", "Previous", "Current", "Cash effect", ""].forEach((h, i) => { const c = document.createElement("th"); if (i > 0 && i < 4) c.className = "num"; c.textContent = h; hr.appendChild(c); });
+      th.appendChild(hr); t.appendChild(th);
+      const tb = document.createElement("tbody");
+      imp.rows.forEach(r => { const tr = document.createElement("tr"); cell(tr, r.label); cell(tr, num(r.previous), "num"); cell(tr, num(r.current), "num"); cell(tr, signed(r.effect), "num"); cell(tr, r.direction); tb.appendChild(tr); });
+      const tr = document.createElement("tr"); cell(tr, "Net effect on cash").style.fontWeight = "700"; cell(tr, ""); cell(tr, "");
+      cell(tr, imp.net === null ? "-" : signed(imp.net), "num");
+      cell(tr, imp.net === null ? "needs all five items for both years" : imp.net < 0 ? "used cash" : imp.net > 0 ? "released cash" : "no effect");
+      tb.appendChild(tr); t.appendChild(tb); ci.appendChild(t);
+      const n = document.createElement("p"); n.className = "note";
+      n.textContent = "An increase in an asset uses cash. An increase in a liability releases cash. Cash and short-term debt are excluded.";
+      ci.appendChild(n);
+    }
+
+    const cm = document.getElementById("commentary"); cm.textContent = "";
+    if (d.commentarySource === "template") {
+      const n = document.createElement("p"); n.className = "warn";
+      n.textContent = "Claude commentary is unavailable (" + (d.commentaryError || "unknown reason") + "). This is a standard summary generated by code from the calculated figures.";
+      cm.appendChild(n);
+    }
+    cm.appendChild(document.createTextNode(d.commentary));
+    const res = document.getElementById("results"); res.hidden = false;
+    res.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  runBtn.addEventListener("click", async () => {
+    statusEl.className = ""; statusEl.textContent = "Calculating and writing the analysis...";
+    runBtn.disabled = true;
+    try {
+      const f = collect();
+      const resp = await fetch("/api/analyse", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ company: document.getElementById("company").value, unit: document.getElementById("unit").value, previous: f.previous, current: f.current })
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || "Something went wrong.");
+      statusEl.textContent = "";
+      render(data);
+    } catch (e) { statusEl.className = "error"; statusEl.textContent = e.message; }
+    finally { runBtn.disabled = false; }
+  });
+</script>
+</body>
+</html>
